@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gemini Pop Trivia!</title>
+  <title>BrainPop Trivia (Offline)</title>
 
-  <!-- Tailwind CSS -->
+  <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- Google Fonts: Fredoka -->
+  <!-- Font -->
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
 
   <!-- Confetti -->
@@ -46,7 +46,6 @@
       background-image: radial-gradient(#d1d5db 2px, transparent 2px);
       background-size: 24px 24px;
     }
-
     @keyframes shake {
       0%, 100% { transform: translateX(0); }
       10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
@@ -65,6 +64,7 @@
 
   <main class="w-full max-w-md mx-auto" id="gameContainer">
 
+    <!-- Header -->
     <header class="flex justify-between items-center mb-6">
       <div class="bg-pop-yellow border-4 border-pop-dark px-4 py-2 rounded-2xl shadow-pop rotate-[-2deg] hover:rotate-0 transition-transform cursor-default">
         <h1 class="text-xl font-bold tracking-wider flex items-center gap-2">
@@ -78,27 +78,33 @@
       </div>
     </header>
 
+    <!-- Question Card -->
     <div class="bg-white border-4 border-pop-dark rounded-3xl p-6 mb-6 shadow-pop relative overflow-hidden min-h-[240px] flex flex-col justify-center items-center text-center transition-all">
+
+      <!-- Loading State -->
       <div id="loader" class="hidden flex-col items-center">
         <div class="flex space-x-3 mb-6">
           <div class="w-5 h-5 bg-pop-purple rounded-full border-2 border-pop-dark loader-dot"></div>
           <div class="w-5 h-5 bg-pop-yellow rounded-full border-2 border-pop-dark loader-dot"></div>
           <div class="w-5 h-5 bg-pop-green rounded-full border-2 border-pop-dark loader-dot"></div>
         </div>
-        <p class="font-bold text-gray-400 animate-pulse text-lg">Brewing a question...</p>
+        <p class="font-bold text-gray-400 animate-pulse text-lg">Loading your trivia deck...</p>
       </div>
 
+      <!-- Content State -->
       <div id="questionContent" class="w-full">
         <div class="inline-flex items-center gap-2 bg-blue-100 text-pop-blue px-4 py-1.5 rounded-full text-sm font-bold mb-6 border-2 border-blue-200">
           <i class="ph-bold ph-question"></i>
-          <span>Question</span>
+          <span id="categoryPill">Question</span>
         </div>
         <h2 id="questionText" class="text-2xl font-bold leading-tight mb-2 text-gray-800">
-          Ready to challenge your brain?
+          Press “Let’s Go!” to start.
         </h2>
+        <p id="progressText" class="text-xs text-gray-500 mt-3 hidden"></p>
       </div>
     </div>
 
+    <!-- Options -->
     <div id="optionsGrid" class="grid grid-cols-1 gap-4 mb-6">
       <button id="startBtn" class="bg-pop-blue text-white font-bold py-5 px-6 rounded-2xl border-4 border-pop-dark shadow-pop hover:shadow-pop-hover hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-pop-active active:translate-x-[4px] active:translate-y-[4px] transition-all text-xl flex items-center justify-center gap-2">
         <i class="ph-bold ph-play"></i>
@@ -106,7 +112,8 @@
       </button>
     </div>
 
-    <div class="h-24 flex flex-col justify-end">
+    <!-- Feedback + Next -->
+    <div class="h-28 flex flex-col justify-end">
       <div id="feedback" class="text-center font-bold text-lg transition-all duration-300 opacity-0 transform translate-y-4 mb-3"></div>
 
       <button id="nextBtn" class="hidden w-full bg-pop-yellow text-pop-dark font-bold py-4 rounded-2xl border-4 border-pop-dark shadow-pop hover:shadow-pop-hover hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-pop-active active:translate-x-[4px] active:translate-y-[4px] transition-all text-xl uppercase tracking-widest flex items-center justify-center gap-2 group">
@@ -115,29 +122,286 @@
       </button>
     </div>
 
-    <div class="mt-4 text-center text-xs text-gray-500">
+    <!-- Footer controls -->
+    <div class="mt-4 text-center text-xs text-gray-500 flex items-center justify-center gap-4 flex-wrap">
       <button id="resetScoreBtn" class="underline hover:text-gray-700">Reset score</button>
+      <button id="newRotationBtn" class="underline hover:text-gray-700">New rotation</button>
+      <button id="resetAllBtn" class="underline hover:text-gray-700 text-pop-red">Reset everything</button>
     </div>
   </main>
 
   <script>
-    let currentScore = 0;
-    let currentCorrectAnswer = "";
+    // -----------------------------
+    // Offline Trivia Engine (1000 Qs)
+    // Different order per user via local seed
+    // Progress saved in localStorage
+    // -----------------------------
+
+    const STORAGE_KEY = "bp_offline_trivia_v1";
+
+    let state = {
+      seed: null,
+      order: [],
+      index: 0,
+      score: 0
+    };
+
+    let questions = []; // generated 1000
+
+    let currentCorrect = "";
     let isAnswering = false;
 
     const $ = (id) => document.getElementById(id);
 
-    function showLoader() {
+    function showLoader(msg) {
+      if (msg) $("loader").querySelector("p").innerText = msg;
       $("questionContent").classList.add("hidden");
       $("loader").classList.remove("hidden");
       $("loader").classList.add("flex");
     }
+
     function hideLoader() {
       $("loader").classList.add("hidden");
       $("loader").classList.remove("flex");
       $("questionContent").classList.remove("hidden");
     }
 
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    // --- Seeded RNG + shuffle (Mulberry32) ---
+    function mulberry32(seed) {
+      let a = seed >>> 0;
+      return function() {
+        a |= 0; a = (a + 0x6D2B79F5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    function shuffleInPlace(arr, rand) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    function randomInt(rand, min, max) {
+      return Math.floor(rand() * (max - min + 1)) + min;
+    }
+
+    function uniq(arr) {
+      return Array.from(new Set(arr));
+    }
+
+    // --- Build 1000 questions procedurally (always correct) ---
+    function generateQuestions(seed) {
+      const rand = mulberry32(seed);
+      const list = [];
+
+      // Helper to build MCQ with unique options
+      function makeQ(category, question, correct, wrongs) {
+        const opts = uniq([correct, ...wrongs]).slice(0, 4);
+        while (opts.length < 4) opts.push(String(correct) + " "); // fallback (rare)
+        // shuffle options
+        const r2 = mulberry32((seed ^ hashStr(question)) >>> 0);
+        shuffleInPlace(opts, r2);
+        return {
+          category,
+          question,
+          options: opts.map(String),
+          correctAnswer: String(correct)
+        };
+      }
+
+      // Hash for stable shuffle
+      function hashStr(s) {
+        let h = 2166136261;
+        for (let i = 0; i < s.length; i++) {
+          h ^= s.charCodeAt(i);
+          h = Math.imul(h, 16777619);
+        }
+        return h >>> 0;
+      }
+
+      // 1) Arithmetic (400)
+      for (let i = 0; i < 400; i++) {
+        const a = randomInt(rand, 2, 99);
+        const b = randomInt(rand, 2, 99);
+        const opPick = randomInt(rand, 1, 4);
+
+        let q, ans;
+        if (opPick === 1) { // +
+          ans = a + b;
+          q = `What is ${a} + ${b}?`;
+        } else if (opPick === 2) { // -
+          const hi = Math.max(a, b), lo = Math.min(a, b);
+          ans = hi - lo;
+          q = `What is ${hi} - ${lo}?`;
+        } else if (opPick === 3) { // ×
+          const x = randomInt(rand, 2, 20);
+          const y = randomInt(rand, 2, 20);
+          ans = x * y;
+          q = `What is ${x} × ${y}?`;
+        } else { // ÷ (clean)
+          const y = randomInt(rand, 2, 20);
+          const ans0 = randomInt(rand, 2, 20);
+          const x = y * ans0;
+          ans = ans0;
+          q = `What is ${x} ÷ ${y}?`;
+        }
+
+        const wrongs = [
+          ans + randomInt(rand, 1, 9),
+          Math.max(0, ans - randomInt(rand, 1, 9)),
+          ans + randomInt(rand, 10, 20)
+        ].map(String);
+
+        list.push(makeQ("Math", q, String(ans), wrongs));
+      }
+
+      // 2) Percent / Fractions (200)
+      for (let i = 0; i < 200; i++) {
+        const base = randomInt(rand, 20, 300);
+        const pctOptions = [5, 10, 15, 20, 25, 30, 40, 50, 60, 75];
+        const pct = pctOptions[randomInt(rand, 0, pctOptions.length - 1)];
+        const ans = (base * pct) / 100;
+        const q = `What is ${pct}% of ${base}?`;
+        const wrongs = [
+          (base * (pct + 5)) / 100,
+          (base * (pct - 5 < 0 ? pct + 10 : pct - 5)) / 100,
+          (base * pct) / 10
+        ].map(n => String(Number.isInteger(n) ? n : n.toFixed(2)));
+
+        const correct = String(Number.isInteger(ans) ? ans : ans.toFixed(2));
+        list.push(makeQ("Percent", q, correct, wrongs));
+      }
+
+      // 3) Time / Units (150)
+      const unitQs = [
+        { cat: "Time", q: (x)=>`How many seconds are in ${x} minutes?`, a: (x)=>x*60, gen: ()=>randomInt(rand,1,59) },
+        { cat: "Time", q: (x)=>`How many minutes are in ${x} hours?`, a: (x)=>x*60, gen: ()=>randomInt(rand,1,12) },
+        { cat: "Length", q: (x)=>`How many centimeters are in ${x} meters?`, a: (x)=>x*100, gen: ()=>randomInt(rand,1,50) },
+        { cat: "Mass", q: (x)=>`How many grams are in ${x} kilograms?`, a: (x)=>x*1000, gen: ()=>randomInt(rand,1,20) },
+        { cat: "Data", q: (x)=>`How many kilobytes (KB) are in ${x} megabytes (MB)? (using 1024)`, a: (x)=>x*1024, gen: ()=>randomInt(rand,1,64) }
+      ];
+      for (let i = 0; i < 150; i++) {
+        const t = unitQs[randomInt(rand,0,unitQs.length-1)];
+        const x = t.gen();
+        const ans = t.a(x);
+        const q = t.q(x);
+        const wrongs = [
+          ans + randomInt(rand, 10, 200),
+          Math.max(0, ans - randomInt(rand, 10, 200)),
+          ans * 2
+        ].map(String);
+        list.push(makeQ(t.cat, q, String(ans), wrongs));
+      }
+
+      // 4) Sequences / Patterns (150)
+      for (let i = 0; i < 150; i++) {
+        const start = randomInt(rand, 1, 30);
+        const step = randomInt(rand, 2, 15);
+        const len = 4;
+        const seq = Array.from({length: len}, (_,k)=> start + k*step);
+        const ans = start + len*step;
+        const q = `What is the next number? ${seq.join(", ")}, ...`;
+        const wrongs = [ans + step, ans - step, ans + randomInt(rand, 1, 9)].map(String);
+        list.push(makeQ("Pattern", q, String(ans), wrongs));
+      }
+
+      // 5) Logic/Counting/Word-style (100) – guaranteed answers
+      const palindromes = ["racecar","level","radar","civic","madam","refer","rotor","kayak","reviver","noon"];
+      const nonPal = ["planet","window","garden","number","yellow","silver","tomato","purple","kitchen","pencil"];
+
+      for (let i = 0; i < 50; i++) {
+        // Palindrome pick
+        const p = palindromes[randomInt(rand,0,palindromes.length-1)];
+        const wrongs = [
+          nonPal[randomInt(rand,0,nonPal.length-1)],
+          nonPal[randomInt(rand,0,nonPal.length-1)],
+          nonPal[randomInt(rand,0,nonPal.length-1)]
+        ];
+        list.push(makeQ("Word", `Which word is a palindrome?`, p, wrongs));
+      }
+
+      for (let i = 0; i < 50; i++) {
+        const words = ["banana","computer","triangle","elephant","library","chocolate","mountain","notebook","umbrella","airplane","football","marathon"];
+        const w = words[randomInt(rand,0,words.length-1)];
+        const ans = w.length;
+        const q = `How many letters are in the word "${w}"?`;
+        const wrongs = [ans+1, Math.max(1,ans-1), ans+2].map(String);
+        list.push(makeQ("Word", q, String(ans), wrongs));
+      }
+
+      // Make exactly 1000 (we currently made 400+200+150+150+100 = 1000)
+      return list.slice(0, 1000);
+    }
+
+    // --- State ---
+    function loadState() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch { return null; }
+    }
+
+    function saveState() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function makeNewSeed() {
+      // crypto-safe random seed (per user)
+      const buf = new Uint32Array(1);
+      crypto.getRandomValues(buf);
+      return buf[0] >>> 0;
+    }
+
+    function buildDeck(seed) {
+      // Generate questions and create shuffled order
+      questions = generateQuestions(seed);
+      const order = Array.from({length: questions.length}, (_, i) => i);
+      const rand = mulberry32(seed ^ 0xA5A5A5A5);
+      shuffleInPlace(order, rand);
+      return order;
+    }
+
+    function init() {
+      showLoader("Loading your trivia deck...");
+
+      const saved = loadState();
+      if (saved && saved.seed && Array.isArray(saved.order) && typeof saved.index === "number") {
+        state = saved;
+      } else {
+        state.seed = makeNewSeed();
+        state.order = buildDeck(state.seed);
+        state.index = 0;
+        state.score = 0;
+        saveState();
+      }
+
+      // Always regenerate questions based on current seed
+      questions = generateQuestions(state.seed);
+
+      // If order is missing or wrong length, rebuild
+      if (!Array.isArray(state.order) || state.order.length !== 1000) {
+        state.order = buildDeck(state.seed);
+        state.index = 0;
+        saveState();
+      }
+
+      $("scoreDisplay").innerText = String(state.score || 0);
+      hideLoader();
+    }
+
+    // --- Game flow ---
     function resetFeedback() {
       $("nextBtn").classList.add("hidden");
       $("feedback").classList.remove("opacity-100", "translate-y-0");
@@ -145,9 +409,10 @@
     }
 
     function updateScore(points) {
-      currentScore += points;
+      state.score = (state.score || 0) + points;
+      $("scoreDisplay").innerText = String(state.score);
+      saveState();
       const scoreEl = $("scoreDisplay");
-      scoreEl.innerText = currentScore;
       scoreEl.classList.remove("scale-125");
       void scoreEl.offsetWidth;
       scoreEl.classList.add("scale-125", "transition-transform");
@@ -162,79 +427,42 @@
         const timeLeft = animationEnd - Date.now();
         if (timeLeft <= 0) return clearInterval(interval);
         const particleCount = 50 * (timeLeft / duration);
-        confetti(Object.assign({}, defaults, {
-          particleCount,
-          origin: { x: 0.1, y: 0.6 },
-          colors: ["#FFD027", "#A855F7", "#3B82F6", "#22C55E"]
-        }));
-        confetti(Object.assign({}, defaults, {
-          particleCount,
-          origin: { x: 0.9, y: 0.6 },
-          colors: ["#FFD027", "#A855F7", "#3B82F6", "#22C55E"]
-        }));
+        confetti(Object.assign({}, defaults, { particleCount, origin: { x: 0.1, y: 0.6 } }));
+        confetti(Object.assign({}, defaults, { particleCount, origin: { x: 0.9, y: 0.6 } }));
       }, 250);
     }
 
-    function escapeHtml(str) {
-      return String(str)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
-    }
-
-    async function fetchQuestion() {
+    function nextQuestion() {
       resetFeedback();
-      isAnswering = false;
-      $("optionsGrid").innerHTML = "";
-      showLoader();
-
-      try {
-        const res = await fetch("/.netlify/functions/gemini-trivia", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({})
-        });
-
-        if (!res.ok) {
-          const text = await res.text().catch(() => "");
-          throw new Error(text || ("HTTP " + res.status));
-        }
-
-        const data = await res.json();
-
-        if (!data || !data.question || !Array.isArray(data.options) || data.options.length !== 4 || !data.correctAnswer) {
-          throw new Error("Bad trivia JSON from server");
-        }
-
-        renderGame(data);
-      } catch (err) {
-        console.error(err);
-        hideLoader();
-        $("questionText").innerText = "Oops! Error loading question.";
-        $("optionsGrid").innerHTML = `
-          <button onclick="fetchQuestion()" class="bg-pop-purple text-white font-bold py-4 px-6 rounded-2xl border-4 border-pop-dark shadow-pop hover:translate-y-[2px] transition-all">
-            Try Again
-          </button>
-          <div class="text-xs text-gray-500 mt-3">
-            If this keeps happening: Netlify env var GEMINI_API_KEY is missing OR your function folder is wrong.
-          </div>
-        `;
-      }
-    }
-
-    function renderGame(data) {
-      hideLoader();
-      $("questionText").innerText = data.question;
-      currentCorrectAnswer = String(data.correctAnswer || "").trim();
       isAnswering = true;
 
+      // If finished deck, reshuffle (same seed + extra mix) OR new seed
+      if (state.index >= state.order.length) {
+        // rotate: new seed so order changes again
+        state.seed = makeNewSeed();
+        state.order = buildDeck(state.seed);
+        state.index = 0;
+        saveState();
+        questions = generateQuestions(state.seed);
+      }
+
+      const qIndex = state.order[state.index];
+      const q = questions[qIndex];
+
+      // Update UI
+      $("categoryPill").innerText = q.category || "Question";
+      $("questionText").innerText = q.question;
+
+      $("progressText").classList.remove("hidden");
+      $("progressText").innerText = `Question ${state.index + 1} / 1000`;
+
+      currentCorrect = q.correctAnswer;
+
+      // Render options
       const grid = $("optionsGrid");
       grid.innerHTML = "";
-
-      data.options.forEach((option) => {
-        const optText = String(option).trim();
+      q.options.forEach(opt => {
+        const optText = String(opt).trim();
         const btn = document.createElement("button");
         btn.className =
           "option-btn w-full bg-white text-pop-dark font-bold py-4 px-5 rounded-2xl border-4 border-pop-dark shadow-[4px_4px_0px_0px_rgba(31,41,55,0.1)] hover:shadow-pop hover:border-pop-purple hover:text-pop-purple transition-all text-lg text-left relative overflow-hidden group";
@@ -249,10 +477,11 @@
       if (!isAnswering) return;
       isAnswering = false;
 
-      const isCorrect = selectedOption.trim() === currentCorrectAnswer;
+      const isCorrect = String(selectedOption).trim() === String(currentCorrect).trim();
       const feedbackEl = $("feedback");
 
-      document.querySelectorAll(".option-btn").forEach((b) => (b.disabled = true));
+      // disable all
+      document.querySelectorAll(".option-btn").forEach(b => b.disabled = true);
 
       if (isCorrect) {
         clickedBtn.classList.remove("bg-white", "hover:border-pop-purple", "hover:text-pop-purple");
@@ -264,7 +493,7 @@
         updateScore(10);
         feedbackEl.innerHTML =
           `<div class="bg-green-100 text-green-700 py-2 px-4 rounded-xl border-2 border-green-200 inline-block">
-            <i class="ph-bold ph-check-circle"></i> Correct! +10 Points
+            <i class="ph-bold ph-check-circle"></i> Correct! +10
           </div>`;
       } else {
         clickedBtn.classList.remove("bg-white", "hover:border-pop-purple", "hover:text-pop-purple");
@@ -272,14 +501,16 @@
         clickedBtn.insertAdjacentHTML("beforeend",
           `<i class="ph-bold ph-x absolute right-4 top-1/2 -translate-y-1/2 text-2xl"></i>`
         );
+
         feedbackEl.innerHTML =
           `<div class="bg-red-100 text-red-700 py-2 px-4 rounded-xl border-2 border-red-200 inline-block">
-            <i class="ph-bold ph-warning"></i> Incorrect! It was: ${escapeHtml(currentCorrectAnswer)}
+            <i class="ph-bold ph-warning"></i> Incorrect! It was: ${escapeHtml(currentCorrect)}
           </div>`;
 
-        document.querySelectorAll(".option-btn").forEach((b) => {
+        // highlight correct
+        document.querySelectorAll(".option-btn").forEach(b => {
           const label = (b.getAttribute("data-option") || "").trim();
-          if (label === currentCorrectAnswer) {
+          if (label === String(currentCorrect).trim()) {
             b.classList.remove("bg-white");
             b.classList.add("bg-green-100", "text-green-800", "border-green-600", "opacity-75");
             b.insertAdjacentHTML("beforeend",
@@ -293,14 +524,63 @@
       feedbackEl.classList.add("opacity-100", "translate-y-0");
 
       $("nextBtn").classList.remove("hidden");
+
+      // advance index now (so refreshing after answer moves on)
+      state.index += 1;
+      saveState();
     }
 
-    $("startBtn").addEventListener("click", fetchQuestion);
-    $("nextBtn").addEventListener("click", fetchQuestion);
+    // --- Controls ---
+    $("startBtn").addEventListener("click", () => nextQuestion());
+    $("nextBtn").addEventListener("click", () => nextQuestion());
+
     $("resetScoreBtn").addEventListener("click", () => {
-      currentScore = 0;
+      state.score = 0;
       $("scoreDisplay").innerText = "0";
+      saveState();
     });
+
+    $("newRotationBtn").addEventListener("click", () => {
+      // new seed = new order, different from other users
+      state.seed = makeNewSeed();
+      state.order = buildDeck(state.seed);
+      state.index = 0;
+      saveState();
+      questions = generateQuestions(state.seed);
+      $("questionText").innerText = "Rotation changed! Press Next to continue.";
+      $("optionsGrid").innerHTML = `
+        <button id="goBtn" class="bg-pop-blue text-white font-bold py-5 px-6 rounded-2xl border-4 border-pop-dark shadow-pop hover:shadow-pop-hover hover:translate-x-[2px] hover:translate-y-[2px] transition-all text-xl flex items-center justify-center gap-2">
+          <i class="ph-bold ph-play"></i> Continue
+        </button>
+      `;
+      $("goBtn").addEventListener("click", () => nextQuestion());
+      $("progressText").classList.add("hidden");
+      resetFeedback();
+    });
+
+    $("resetAllBtn").addEventListener("click", () => {
+      localStorage.removeItem(STORAGE_KEY);
+      // hard reset state
+      state = { seed: makeNewSeed(), order: [], index: 0, score: 0 };
+      state.order = buildDeck(state.seed);
+      saveState();
+      questions = generateQuestions(state.seed);
+
+      $("scoreDisplay").innerText = "0";
+      $("categoryPill").innerText = "Question";
+      $("questionText").innerText = "Reset done. Press “Let’s Go!” to start again.";
+      $("progressText").classList.add("hidden");
+      $("optionsGrid").innerHTML = `
+        <button id="startBtn2" class="bg-pop-blue text-white font-bold py-5 px-6 rounded-2xl border-4 border-pop-dark shadow-pop hover:shadow-pop-hover hover:translate-x-[2px] hover:translate-y-[2px] transition-all text-xl flex items-center justify-center gap-2">
+          <i class="ph-bold ph-play"></i> Let's Go!
+        </button>
+      `;
+      $("startBtn2").addEventListener("click", () => nextQuestion());
+      resetFeedback();
+    });
+
+    // Init on load
+    init();
   </script>
 </body>
 </html>
