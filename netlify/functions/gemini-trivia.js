@@ -1,16 +1,10 @@
 // netlify/functions/gemini-trivia.js
 
 exports.handler = async (event) => {
-  // Preflight
   if (event.httpMethod === "OPTIONS") {
-    return {
-      statusCode: 200,
-      headers: corsHeaders(),
-      body: "ok",
-    };
+    return { statusCode: 200, headers: corsHeaders(), body: "ok" };
   }
 
-  // Only POST
   if (event.httpMethod !== "POST") {
     return {
       statusCode: 405,
@@ -42,8 +36,11 @@ Do not include markdown formatting. Only raw JSON.
 `.trim();
 
   try {
+    // ✅ Use a model that exists for YOUR key:
+    const model = "models/gemini-2.0-flash";
+
     const url =
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=" +
+      `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=` +
       encodeURIComponent(apiKey);
 
     const resp = await fetch(url, {
@@ -63,7 +60,7 @@ Do not include markdown formatting. Only raw JSON.
       return {
         statusCode: resp.status,
         headers: corsHeaders(),
-        body: JSON.stringify({ error: "Gemini API error", details: t.slice(0, 800) }),
+        body: JSON.stringify({ error: "Gemini API error", details: t.slice(0, 1200) }),
       };
     }
 
@@ -80,7 +77,7 @@ Do not include markdown formatting. Only raw JSON.
         headers: corsHeaders(),
         body: JSON.stringify({
           error: "Model did not return valid JSON",
-          raw: cleaned.slice(0, 800),
+          raw: cleaned.slice(0, 1200),
         }),
       };
     }
