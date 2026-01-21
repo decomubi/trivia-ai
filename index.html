@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gemini Pop Trivia!</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts: Fredoka -->
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <!-- Confetti Library -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+  <!-- Phosphor Icons -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Fredoka', 'sans-serif'] },
+          colors: {
+            'pop-yellow': '#FFD027',
+            'pop-purple': '#A855F7',
+            'pop-blue': '#3B82F6',
+            'pop-green': '#22C55E',
+            'pop-red': '#EF4444',
+            'pop-dark': '#1F2937',
+            'pop-bg': '#F3F4F6',
+          },
+          boxShadow: {
+            'pop': '4px 4px 0px 0px #1F2937',
+            'pop-hover': '2px 2px 0px 0px #1F2937',
+            'pop-active': '0px 0px 0px 0px #1F2937',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      background-image: radial-gradient(#d1d5db 2px, transparent 2px);
+      background-size: 24px 24px;
+    }
+
+    /* Shake Animation for wrong answers */
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+      20%, 40%, 60%, 80% { transform: translateX(5px); }
+    }
+    .animate-shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
+
+    /* Loading Dots */
+    .loader-dot { animation: bounce 0.6s infinite alternate; }
+    .loader-dot:nth-child(2) { animation-delay: 0.2s; }
+    .loader-dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce { to { transform: translateY(-10px); } }
+  </style>
+</head>
+
+<body class="bg-pop-bg text-pop-dark min-h-screen flex items-center justify-center p-4">
+
+  <!-- Main Game Container -->
+  <main class="w-full max-w-md mx-auto" id="gameContainer">
+
+    <!-- Header -->
+    <header class="flex justify-between items-center mb-6">
+      <div class="bg-pop-yellow border-4 border-pop-dark px-4 py-2 rounded-2xl shadow-pop rotate-[-2deg] hover:rotate-0 transition-transform cursor-default">
+        <h1 class="text-xl font-bold tracking-wider flex items-center gap-2">
+          <i class="ph-fill ph-brain"></i>
+          BRAIN<span class="text-white drop-shadow-md">POP</span>
+        </h1>
+      </div>
+      <div class="bg-white border-4 border-pop-dark px-4 py-2 rounded-2xl shadow-pop font-bold flex items-center gap-2">
+        <i class="ph-fill ph-star text-pop-yellow text-xl"></i>
+        <span id="scoreDisplay" class="text-pop-purple text-xl">0</span>
+      </div>
+    </header>
+
+    <!-- Question Card -->
+    <div class="bg-white border-4 border-pop-dark rounded-3xl p-6 mb-6 shadow-pop relative overflow-hidden min-h-[240px] flex flex-col justify-center items-center text-center transition-all">
+
+      <!-- Loading State -->
+      <div id="loader" class="hidden flex-col items-center">
+        <div class="flex space-x-3 mb-6">
+          <div class="w-5 h-5 bg-pop-purple rounded-full border-2 border-pop-dark loader-dot"></div>
+          <div class="w-5 h-5 bg-pop-yellow rounded-full border-2 border-pop-dark loader-dot"></div>
+          <div class="w-5 h-5 bg-pop-green rounded-full border-2 border-pop-dark loader-dot"></div>
+        </div>
+        <p class="font-bold text-gray-400 animate-pulse text-lg">Brewing a question...</p>
+      </div>
+
+      <!-- Content State -->
+      <div id="questionContent" class="w-full">
+        <div class="inline-flex items-center gap-2 bg-blue-100 text-pop-blue px-4 py-1.5 rounded-full text-sm font-bold mb-6 border-2 border-blue-200">
+          <i class="ph-bold ph-question"></i>
+          <span>Question</span>
+        </div>
+        <h2 id="questionText" class="text-2xl font-bold leading-tight mb-2 text-gray-800">
+          Ready to challenge your brain?
+        </h2>
+      </div>
+    </div>
+
+    <!-- Options Grid -->
+    <div id="optionsGrid" class="grid grid-cols-1 gap-4 mb-6">
+      <button id="startBtn" class="bg-pop-blue text-white font-bold py-5 px-6 rounded-2xl border-4 border-pop-dark shadow-pop hover:shadow-pop-hover hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-pop-active active:translate-x-[4px] active:translate-y-[4px] transition-all text-xl flex items-center justify-center gap-2">
+        <i class="ph-bold ph-play"></i>
+        Let's Go!
+      </button>
+    </div>
+
+    <!-- Feedback & Next Action Area -->
+    <div class="h-24 flex flex-col justify-end">
+      <div id="feedback" class="text-center font-bold text-lg transition-all duration-300 opacity-0 transform translate-y-4 mb-3"></div>
+
+      <button id="nextBtn" class="hidden w-full bg-pop-yellow text-pop-dark font-bold py-4 rounded-2xl border-4 border-pop-dark shadow-pop hover:shadow-pop-hover hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-pop-active active:translate-x-[4px] active:translate-y-[4px] transition-all text-xl uppercase tracking-widest flex items-center justify-center gap-2 group">
+        Next
+        <i class="ph-bold ph-arrow-right group-hover:translate-x-1 transition-transform"></i>
+      </button>
+    </div>
+
+    <!-- Small footer controls -->
+    <div class="mt-4 text-center text-xs text-gray-500">
+      <button id="resetScoreBtn" class="underline hover:text-gray-700">Reset score</button>
+    </div>
+  </main>
+
+  <script>
+    let currentScore = 0;
+    let currentCorrectAnswer = '';
+    let isAnswering = false;
+
+    const $ = (id) => document.getElementById(id);
+
+    function showLoader() {
+      $("questionContent").classList.add("hidden");
+      $("loader").classList.remove("hidden");
+      $("loader").classList.add("flex");
+    }
+
+    function hideLoader() {
+      $("loader").classList.add("hidden");
+      $("loader").classList.remove("flex");
+      $("questionContent").classList.remove("hidden");
+    }
+
+    function resetFeedback() {
+      $("nextBtn").classList.add("hidden");
+      $("feedback").classList.remove("opacity-100", "translate-y-0");
+      $("feedback").classList.add("opacity-0", "translate-y-4");
+    }
+
+    function updateScore(points) {
+      currentScore += points;
+      const scoreEl = $("scoreDisplay");
+      scoreEl.innerText = currentScore;
+      scoreEl.classList.remove("scale-125");
+      void scoreEl.offsetWidth;
+      scoreEl.classList.add("scale-125", "transition-transform");
+      setTimeout(() => scoreEl.classList.remove("scale-125"), 200);
+    }
+
+    function triggerConfetti() {
+      const duration = 500;
+      const animationEnd = Date.now() + duration;
+      const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
+
+      const interval = setInterval(() => {
+        const timeLeft = animationEnd - Date.now();
+        if (timeLeft <= 0) return clearInterval(interval);
+
+        const particleCount = 50 * (timeLeft / duration);
+        confetti(Object.assign({}, defaults, {
+          particleCount,
+          origin: { x: 0.1, y: 0.6 },
+          colors: ['#FFD027', '#A855F7', '#3B82F6', '#22C55E']
+        }));
+        confetti(Object.assign({}, defaults, {
+          particleCount,
+          origin: { x: 0.9, y: 0.6 },
+          colors: ['#FFD027', '#A855F7', '#3B82F6', '#22C55E']
+        }));
+      }, 250);
+    }
+
+    // --- Gemini via Backend (SAFE) ---
+    async function fetchQuestion() {
+      resetFeedback();
+      isAnswering = false;
+      $("optionsGrid").innerHTML = ""; // clear
+      showLoader();
+
+      try {
+        const res = await fetch("/.netlify/functions/gemini-trivia", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}) // nothing needed
+        });
+
+        if (!res.ok) {
+          const msg = await res.text().catch(() => "");
+          throw new Error("Backend error: " + (msg || res.status));
+        }
+
+        const questionData = await res.json();
+
+        // Basic validation
+        if (!questionData || !questionData.question || !Array.isArray(questionData.options) || questionData.options.length !== 4 || !questionData.correctAnswer) {
+          throw new Error("Invalid JSON shape from backend");
+        }
+
+        renderGame(questionData);
+      } catch (err) {
+        console.error(err);
+        hideLoader();
+        $("questionText").innerText = "Oops! Error loading question.";
+        $("optionsGrid").innerHTML = `
+          <button onclick="fetchQuestion()" class="bg-pop-purple text-white font-bold py-4 px-6 rounded-2xl border-4 border-pop-dark shadow-pop hover:translate-y-[2px] transition-all">
+            Try Again
+          </button>
+          <a href="https://console.cloud.google.com/" target="_blank" class="block text-xs text-gray-500 underline mt-2">
+            If you didn't set the API key on Netlify, do that first
+          </a>
+        `;
+      }
+    }
+
+    function renderGame(data) {
+      hideLoader();
+      $("questionText").innerText = data.question;
+      currentCorrectAnswer = (data.correctAnswer || "").trim();
+      isAnswering = true;
+
+      const grid = $("optionsGrid");
+      grid.innerHTML = "";
+
+      data.options.forEach(option => {
+        const optText = String(option).trim();
+
+        const btn = document.createElement("button");
+        btn.className =
+          "option-btn w-full bg-white text-pop-dark font-bold py-4 px-5 rounded-2xl border-4 border-pop-dark shadow-[4px_4px_0px_0px_rgba(31,41,55,0.1)] hover:shadow-pop hover:border-pop-purple hover:text-pop-purple transition-all text-lg text-left relative overflow-hidden group";
+        btn.setAttribute("data-option", optText);
+
+        btn.innerHTML = `<span class="relative z-10">${escapeHtml(optText)}</span>`;
+        btn.onclick = () => handleAnswer(btn, optText);
+
+        grid.appendChild(btn);
+      });
+    }
+
+    function handleAnswer(clickedBtn, selectedOption) {
+      if (!isAnswering) return;
+      isAnswering = false;
+
+      const isCorrect = selectedOption.trim() === currentCorrectAnswer;
+      const feedbackEl = $("feedback");
+
+      // Disable all buttons
+      document.querySelectorAll(".option-btn").forEach(b => b.disabled = true);
+
+      if (isCorrect) {
+        clickedBtn.classList.remove("bg-white", "hover:border-pop-purple", "hover:text-pop-purple");
+        clickedBtn.classList.add("bg-pop-green", "text-white", "border-green-800", "scale-[1.02]", "shadow-pop");
+        clickedBtn.insertAdjacentHTML("beforeend",
+          `<i class="ph-bold ph-check absolute right-4 top-1/2 -translate-y-1/2 text-2xl animate-bounce"></i>`
+        );
+
+        triggerConfetti();
+        updateScore(10);
+        feedbackEl.innerHTML =
+          `<div class="bg-green-100 text-green-700 py-2 px-4 rounded-xl border-2 border-green-200 inline-block">
+            <i class="ph-bold ph-check-circle"></i> Correct! +10 Points
+          </div>`;
+      } else {
+        clickedBtn.classList.remove("bg-white", "hover:border-pop-purple", "hover:text-pop-purple");
+        clickedBtn.classList.add("bg-pop-red", "text-white", "border-red-900", "animate-shake");
+        clickedBtn.insertAdjacentHTML("beforeend",
+          `<i class="ph-bold ph-x absolute right-4 top-1/2 -translate-y-1/2 text-2xl"></i>`
+        );
+
+        feedbackEl.innerHTML =
+          `<div class="bg-red-100 text-red-700 py-2 px-4 rounded-xl border-2 border-red-200 inline-block">
+            <i class="ph-bold ph-warning"></i> Incorrect! It was: ${escapeHtml(currentCorrectAnswer)}
+          </div>`;
+
+        // Highlight correct
+        document.querySelectorAll(".option-btn").forEach(b => {
+          const label = (b.getAttribute("data-option") || "").trim();
+          if (label === currentCorrectAnswer) {
+            b.classList.remove("bg-white");
+            b.classList.add("bg-green-100", "text-green-800", "border-green-600", "opacity-75");
+            b.insertAdjacentHTML("beforeend",
+              `<i class="ph-bold ph-check absolute right-4 top-1/2 -translate-y-1/2 text-2xl"></i>`
+            );
+          }
+        });
+      }
+
+      feedbackEl.classList.remove("opacity-0", "translate-y-4");
+      feedbackEl.classList.add("opacity-100", "translate-y-0");
+
+      $("nextBtn").classList.remove("hidden");
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    // Hooks
+    $("startBtn").addEventListener("click", fetchQuestion);
+    $("nextBtn").addEventListener("click", fetchQuestion);
+    $("resetScoreBtn").addEventListener("click", () => {
+      currentScore = 0;
+      $("scoreDisplay").innerText = "0";
+    });
+  </script>
+</body>
+</html>
